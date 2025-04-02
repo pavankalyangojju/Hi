@@ -141,7 +141,7 @@ try:
         cam.release()
         cv2.destroyAllWindows()
         time.sleep(3)
-
+###Hi
 except KeyboardInterrupt:
     print("\n[INFO] Program interrupted. Exiting gracefully.")
     servo.stop()
