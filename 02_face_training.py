@@ -1,54 +1,83 @@
-''''
-Training Multiple Faces stored on a DataBase:
-	==> Each face should have a unique numeric integer ID as 1, 2, 3, etc                       
-	==> LBPH computed model will be saved on trainer/ directory. (if it does not exist, pls create one)
-	==> for using PIL, install pillow library with "pip install pillow"
-
-Based on original code by Anirban Kar: https://github.com/thecodacus/Face-Recognition    
-
-Developed by Marcelo Rovai - MJRoBot.org @ 21Feb18   
-
-'''
-
 import cv2
 import numpy as np
 from PIL import Image
 import os
+import csv
 
-# Path for face image database
-path = 'dataset'
-if not os.path.exists('trainer'):os.makedirs('trainer')
-	
+# Paths
+dataset_path = 'dataset'
+trainer_path = 'trainer'
+labels_path = os.path.join(trainer_path, 'labels.csv')
+
+# Create trainer folder if it doesn't exist
+if not os.path.exists(trainer_path):
+    os.makedirs(trainer_path)
+
+# Load OpenCV face recognizer and cascade
 recognizer = cv2.face.LBPHFaceRecognizer_create()
-detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml");
+detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 
-# function to get the images and label data
+# Function to extract face samples and corresponding IDs
 def getImagesAndLabels(path):
-
-    imagePaths = [os.path.join(path,f) for f in os.listdir(path)]     
-    faceSamples=[]
+    face_samples = []
     ids = []
+    labels = []
 
-    for imagePath in imagePaths:
+    for folder_name in os.listdir(path):
+        folder_path = os.path.join(path, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
 
-        PIL_img = Image.open(imagePath).convert('L') # convert it to grayscale
-        img_numpy = np.array(PIL_img,'uint8')
+        try:
+            id = int(folder_name)
+        except ValueError:
+            print(f"[WARNING] Skipping folder with invalid RFID: {folder_name}")
+            continue
 
-        id = int(os.path.split(imagePath)[-1].split(".")[1])
-        faces = detector.detectMultiScale(img_numpy)
+        # Read name from name.txt
+        name_file = os.path.join(folder_path, 'name.txt')
+        if os.path.exists(name_file):
+            with open(name_file, 'r') as f:
+                name = f.read().strip()
+        else:
+            name = "Unknown"
 
-        for (x,y,w,h) in faces:
-            faceSamples.append(img_numpy[y:y+h,x:x+w])
-            ids.append(id)
+        labels.append((id, name))
 
-    return faceSamples,ids
+        for image_file in os.listdir(folder_path):
+            if not image_file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                continue  # skip non-image files
 
-print ("\n [INFO] Training faces. It will take a few seconds. Wait ...")
-faces,ids = getImagesAndLabels(path)
+            image_path = os.path.join(folder_path, image_file)
+            try:
+                pil_img = Image.open(image_path).convert('L')
+            except Exception as e:
+                print(f"[WARNING] Skipping image {image_path}: {e}")
+                continue
+
+            img_numpy = np.array(pil_img, 'uint8')
+            faces = detector.detectMultiScale(img_numpy)
+
+            for (x, y, w, h) in faces:
+                face_samples.append(img_numpy[y:y+h, x:x+w])
+                ids.append(id)
+
+    return face_samples, ids, labels
+
+# Start training
+print("\n[INFO] Training faces. It will take a few seconds. Wait ...")
+faces, ids, labels = getImagesAndLabels(dataset_path)
 recognizer.train(faces, np.array(ids))
 
-# Save the model into trainer/trainer.yml
-recognizer.write('trainer/trainer.yml') # recognizer.save() worked on Mac, but not on Pi
+# Save the trained model
+recognizer.write(os.path.join(trainer_path, 'trainer.yml'))
 
-# Print the numer of faces trained and end program
-print("\n [INFO] {0} faces trained. Exiting Program".format(len(np.unique(ids))))
+# Save labels as CSV
+with open(labels_path, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(["RFID", "Name"])
+    unique_labels = list({(id_, name) for id_, name in labels})  # remove duplicates
+    writer.writerows(unique_labels)
+
+print(f"\n[INFO] {len(np.unique(ids))} unique faces trained.")
+print(f"[INFO] Labels saved to {labels_path}. Exiting Program.")
