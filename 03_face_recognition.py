@@ -8,7 +8,7 @@ from PIL import Image
 import pandas as pd
 import threading
 import requests
-from collections import defaultdict  # ✅ Added here
+from collections import defaultdict
 
 # GPIO Setup
 GPIO.setwarnings(False)
@@ -38,7 +38,7 @@ BOT_TOKEN = "7038070025:AAHOoUWmqVPvFmmITJKpbWVGcdwzLDmcVJI"
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 last_update_id = 0
 
-# Unmatched attempts tracker ✅
+# Track unmatched attempts
 unmatched_counter = defaultdict(int)
 
 def open_close():
@@ -171,16 +171,16 @@ def recognize_and_act():
                 GPIO.output(RELAY_PINS["relay3"], GPIO.LOW)
                 GPIO.output(RELAY_PINS["relay4"], GPIO.LOW)
                 matched_actions()
-                unmatched_counter[rfid_id] = 0  # ✅ reset unmatched counter
+                unmatched_counter[rfid_id] = 0
                 matched = True
                 break
             else:
-                unmatched_counter[rfid_id] += 1  # ✅ count unmatched attempts
+                unmatched_counter[rfid_id] += 1
                 print(f"[UNMATCHED] Attempt {unmatched_counter[rfid_id]}/3")
                 unmatched_actions()
 
                 if unmatched_counter[rfid_id] >= 3:
-                    print("[WARNING] Too many failed attempts. Restarting...")
+                    print("[BLOCKED] Too many failed attempts. Returning to RFID scan.")
                     cam.release()
                     cv2.destroyAllWindows()
                     return
