@@ -8,7 +8,7 @@ from PIL import Image
 import pandas as pd
 import threading
 import requests
-from collections import defaultdict
+from collections import defaultdict  # ✅ Added here
 
 # GPIO Setup
 GPIO.setwarnings(False)
@@ -20,7 +20,7 @@ RELAY_PINS = {
     "relay3": 13,
     "relay4": 6,
 }
-SERVO_PIN = 17
+SERVO_PIN = 21
 GREEN_LED = 22
 RED_LED = 27
 BUZZER = 5
@@ -33,13 +33,13 @@ for pin in ALL_OUTPUTS:
 servo = GPIO.PWM(SERVO_PIN, 50)
 servo.start(0)
 
-# Telegram Bot Setup
+# Telegram Bot
 BOT_TOKEN = "7038070025:AAHOoUWmqVPvFmmITJKpbWVGcdwzLDmcVJI"
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 last_update_id = 0
 
-# Track unmatched face attempts
-unmatched_attempts = defaultdict(int)
+# Unmatched attempts tracker ✅
+unmatched_counter = defaultdict(int)
 
 def open_close():
     servo.ChangeDutyCycle(12.5)
@@ -67,14 +67,12 @@ def handle_telegram():
                 if msg == "/relayall_on":
                     for pin in RELAY_PINS.values():
                         GPIO.output(pin, GPIO.HIGH)
-                    response = "All relays turned ON"
-                    requests.post(f"{BASE_URL}/sendMessage", data={"chat_id": chat_id, "text": response})
+                    requests.post(f"{BASE_URL}/sendMessage", data={"chat_id": chat_id, "text": "All relays turned ON"})
 
                 elif msg == "/relayall_off":
                     for pin in RELAY_PINS.values():
                         GPIO.output(pin, GPIO.LOW)
-                    response = "All relays turned OFF"
-                    requests.post(f"{BASE_URL}/sendMessage", data={"chat_id": chat_id, "text": response})
+                    requests.post(f"{BASE_URL}/sendMessage", data={"chat_id": chat_id, "text": "All relays turned OFF"})
 
                 elif msg.startswith("/relay"):
                     parts = msg.split("_")
@@ -82,15 +80,9 @@ def handle_telegram():
                         relay, state = parts
                         relay = relay.lstrip("/")
                         if relay in RELAY_PINS:
-                            if state == "on":
-                                GPIO.output(RELAY_PINS[relay], GPIO.HIGH)
-                                response = f"{relay} turned ON"
-                            elif state == "off":
-                                GPIO.output(RELAY_PINS[relay], GPIO.LOW)
-                                response = f"{relay} turned OFF"
-                            else:
-                                response = "Invalid state command."
-                            requests.post(f"{BASE_URL}/sendMessage", data={"chat_id": chat_id, "text": response})
+                            GPIO.output(RELAY_PINS[relay], GPIO.HIGH if state == "on" else GPIO.LOW)
+                            status = f"{relay} turned {state.upper()}"
+                            requests.post(f"{BASE_URL}/sendMessage", data={"chat_id": chat_id, "text": status})
         except Exception as e:
             print(f"[ERROR] Telegram handler: {e}")
         time.sleep(2)
@@ -179,16 +171,16 @@ def recognize_and_act():
                 GPIO.output(RELAY_PINS["relay3"], GPIO.LOW)
                 GPIO.output(RELAY_PINS["relay4"], GPIO.LOW)
                 matched_actions()
+                unmatched_counter[rfid_id] = 0  # ✅ reset unmatched counter
                 matched = True
-                unmatched_attempts[rfid_id] = 0  # Reset count on success
                 break
             else:
-                unmatched_attempts[rfid_id] += 1
-                print(f"[WARNING] Unknown face detected. Attempt: {unmatched_attempts[rfid_id]}")
+                unmatched_counter[rfid_id] += 1  # ✅ count unmatched attempts
+                print(f"[UNMATCHED] Attempt {unmatched_counter[rfid_id]}/3")
                 unmatched_actions()
 
-                if unmatched_attempts[rfid_id] >= 3:
-                    print("[WARNING] Too many unmatched attempts. Restarting...")
+                if unmatched_counter[rfid_id] >= 3:
+                    print("[WARNING] Too many failed attempts. Restarting...")
                     cam.release()
                     cv2.destroyAllWindows()
                     return
