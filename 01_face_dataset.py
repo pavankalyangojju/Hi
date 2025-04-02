@@ -1,59 +1,89 @@
-''''
-Capture multiple Faces from multiple users to be stored on a DataBase (dataset directory)
-	==> Faces will be stored on a directory: dataset/ (if does not exist, pls create one)
-	==> Each face will have a unique numeric integer ID as 1, 2, 3, etc                       
-
-Based on original code by Anirban Kar: https://github.com/thecodacus/Face-Recognition    
-
-Developed by Marcelo Rovai - MJRoBot.org @ 21Feb18    
-
+# -*- coding: utf-8 -*-
+'''
+Real Time Face Registration with RFID Integration and LED Indication (No LCD)
 '''
 
 import cv2
 import os
+import RPi.GPIO as GPIO
+from mfrc522 import SimpleMFRC522
+import time
 
-if not os.path.exists('dataset'):os.makedirs('dataset')
+# GPIO and LED Setup
+LED_PIN = 18
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(LED_PIN, GPIO.OUT)
+GPIO.output(LED_PIN, GPIO.LOW)
 
-	
+# Setup RFID Reader
+reader = SimpleMFRC522()
+
+# Initialize Camera
 cam = cv2.VideoCapture(0)
-cam.set(3, 640) # set video width
-cam.set(4, 480) # set video height
+cam.set(3, 640)  # width
+cam.set(4, 480)  # height
 
+# Load Haar Cascade for face detection
 face_detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
-# For each person, enter one numeric face id
-face_id = input('\n Enter anm integer (ie. 0,1,2, etc) user id end press <return> ==>  ')
+try:
+    while True:
+        print("\n[INFO] Please scan your RFID card to begin...")
+        try:
+            rfid_id, rfid_text = reader.read()
+            print(f"\n[INFO] RFID ID: {rfid_id}")
+        except Exception as e:
+            print(f"[ERROR] RFID Read Error: {e}")
+            GPIO.cleanup()
+            exit()
 
-print("\n [INFO] Initializing face capture. Look the camera and wait ...")
-# Initialize individual sampling face count
-count = 0
+        # Ask for user's name
+        name = input("Enter the name of the person: ").strip()
 
-while(True):
+        # Create folder named after RFID if not exists
+        rfid_folder = os.path.join('dataset', str(rfid_id))
+        os.makedirs(rfid_folder, exist_ok=True)
 
-    ret, img = cam.read()
-    img = cv2.flip(img, -1) # flip video image vertically
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_detector.detectMultiScale(gray, 1.3, 5)
+        # Save name in a text file for future reference
+        with open(os.path.join(rfid_folder, "name.txt"), "w") as f:
+            f.write(name)
 
-    for (x,y,w,h) in faces:
+        print(f"\n[INFO] Registered name '{name}' for RFID {rfid_id}")
+        print("[INFO] Initializing face capture. Look at the camera...")
+        print("[INFO] LED ON during capture. Wait until it turns OFF.")
 
-        cv2.rectangle(img, (x,y), (x+w,y+h), (255,0,0), 2)     
-        count += 1
+        count = 0
+        GPIO.output(LED_PIN, GPIO.HIGH)
 
-        # Save the captured image into the datasets folder
-        cv2.imwrite("dataset/User." + str(face_id) + '.' + str(count) + ".jpg", gray[y:y+h,x:x+w])
+        while True:
+            ret, img = cam.read()
+            img = cv2.flip(img, -1)  # vertically flip
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = face_detector.detectMultiScale(gray, 1.3, 5)
 
-        cv2.imshow('image', img)
+            for (x, y, w, h) in faces:
+                count += 1
+                cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                filename = os.path.join(rfid_folder, f"{count}.jpg")
+                cv2.imwrite(filename, gray[y:y + h, x:x + w])
+                cv2.imshow('image', img)
 
-    k = cv2.waitKey(100) & 0xff # Press 'ESC' for exiting video
-    if k == 27:
-        break
-    elif count >= 30: # Take 30 face sample and stop video
-         break
+            k = cv2.waitKey(100) & 0xff
+            if k == 27 or count >= 30:
+                break
 
-# Do a bit of cleanup
-print("\n [INFO] Exiting Program and cleanup stuff")
-cam.release()
-cv2.destroyAllWindows()
+        GPIO.output(LED_PIN, GPIO.LOW)
+        time.sleep(1)
+        print("[INFO] Face data saved successfully.\n")
+        print("[INFO] Ready for next user. Press Ctrl+C to stop.\n")
 
+except KeyboardInterrupt:
+    print("\n[INFO] Interrupted by user (Ctrl+C)")
 
+finally:
+    cam.release()
+    cv2.destroyAllWindows()
+    GPIO.output(LED_PIN, GPIO.LOW)
+    GPIO.cleanup()
+    print("[INFO] Cleanup complete. Exiting.")
