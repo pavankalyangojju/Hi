@@ -29,22 +29,20 @@ GPIO.output(RED_LED_PIN, GPIO.LOW)
 servo = GPIO.PWM(SERVO_PIN, 50)
 servo.start(0)
 
-attendance_log = defaultdict(list)
-
-def move_servo():
-    servo.ChangeDutyCycle(2.5)  # 0 degrees
-    time.sleep(0.5)
-    servo.ChangeDutyCycle(12.5)  # 180 degrees
-    time.sleep(1)
-    servo.ChangeDutyCycle(0)
-    time.sleep(3)
-    servo.ChangeDutyCycle(2.5)  # back to 0 degrees
-    time.sleep(0.5)
-    servo.ChangeDutyCycle(0)
-
 reader = SimpleMFRC522()
 face_detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 recognizer = cv2.face.LBPHFaceRecognizer_create()
+
+def move_servo():
+    servo.ChangeDutyCycle(2.5)   # 0°
+    time.sleep(0.5)
+    servo.ChangeDutyCycle(12.5)  # 180°
+    time.sleep(1)
+    servo.ChangeDutyCycle(0)
+    time.sleep(3)
+    servo.ChangeDutyCycle(2.5)   # Back to 0°
+    time.sleep(0.5)
+    servo.ChangeDutyCycle(0)
 
 try:
     while True:
@@ -72,19 +70,18 @@ try:
             continue
 
         def get_images_and_labels(path):
-            image_paths = [os.path.join(path, f) for f in os.listdir(path) if f.endswith('.jpg')]
-            face_samples = []
-            ids = []
-            for image_path in image_paths:
-                try:
-                    img = Image.open(image_path).convert('L')
-                    img_np = np.array(img, 'uint8')
-                    faces = face_detector.detectMultiScale(img_np)
-                    for (x, y, w, h) in faces:
-                        face_samples.append(img_np[y:y+h, x:x+w])
-                        ids.append(1)
-                except:
-                    continue
+            face_samples, ids = [], []
+            for file in os.listdir(path):
+                if file.endswith('.jpg'):
+                    try:
+                        img = Image.open(os.path.join(path, file)).convert('L')
+                        img_np = np.array(img, 'uint8')
+                        faces = face_detector.detectMultiScale(img_np)
+                        for (x, y, w, h) in faces:
+                            face_samples.append(img_np[y:y+h, x:x+w])
+                            ids.append(1)
+                    except:
+                        continue
             return face_samples, ids
 
         print("[INFO] Training model...")
@@ -104,9 +101,10 @@ try:
             faces = face_detector.detectMultiScale(gray, 1.3, 5)
 
             for (x, y, w, h) in faces:
-                id_pred, confidence = recognizer.predict(gray[y:y+h, x:x+w])
+                face_only = gray[y:y+h, x:x+w]
+                id_pred, conf = recognizer.predict(face_only)
 
-                if confidence < 40:
+                if conf < 40:
                     name_file = os.path.join(image_folder, "name.txt")
                     if os.path.exists(name_file):
                         with open(name_file, "r") as f:
@@ -134,15 +132,16 @@ try:
                         time.sleep(0.3)
                     GPIO.output(RED_LED_PIN, GPIO.LOW)
 
-            cv2.imshow("camera", img)
+            cv2.imshow("Face Recognition", img)
             if matched or cv2.waitKey(1) & 0xFF == 27:
                 break
 
         cam.release()
         cv2.destroyAllWindows()
         time.sleep(3)
-###Hi
+
 except KeyboardInterrupt:
-    print("\n[INFO] Program interrupted. Exiting gracefully.")
+    print("\n[INFO] Exiting...")
     servo.stop()
     GPIO.cleanup()
+##hi
