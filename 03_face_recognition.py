@@ -5,8 +5,6 @@ import RPi.GPIO as GPIO
 from mfrc522 import SimpleMFRC522
 import time
 from PIL import Image
-from datetime import datetime
-from collections import defaultdict
 
 # GPIO Setup
 BUZZER_PIN = 17
@@ -16,7 +14,6 @@ SERVO_PIN = 21
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
-
 GPIO.setup(BUZZER_PIN, GPIO.OUT)
 GPIO.setup(GREEN_LED_PIN, GPIO.OUT)
 GPIO.setup(RED_LED_PIN, GPIO.OUT)
@@ -34,13 +31,13 @@ face_detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 def move_servo():
-    servo.ChangeDutyCycle(2.5)   # 0°
+    servo.ChangeDutyCycle(2.5)   # 0 degrees
     time.sleep(0.5)
-    servo.ChangeDutyCycle(12.5)  # 180°
+    servo.ChangeDutyCycle(12.5)  # 180 degrees
     time.sleep(1)
     servo.ChangeDutyCycle(0)
     time.sleep(3)
-    servo.ChangeDutyCycle(2.5)   # Back to 0°
+    servo.ChangeDutyCycle(2.5)   # back to 0 degrees
     time.sleep(0.5)
     servo.ChangeDutyCycle(0)
 
@@ -100,11 +97,17 @@ try:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             faces = face_detector.detectMultiScale(gray, 1.3, 5)
 
+            if len(faces) != 1:
+                print("[WARNING] Multiple or no faces detected. Ignoring frame.")
+                continue
+
             for (x, y, w, h) in faces:
                 face_only = gray[y:y+h, x:x+w]
                 id_pred, conf = recognizer.predict(face_only)
 
-                if conf < 40:
+                print(f"[DEBUG] Confidence: {conf:.2f}")
+
+                if conf < 35:  # Lower value means higher confidence
                     name_file = os.path.join(image_folder, "name.txt")
                     if os.path.exists(name_file):
                         with open(name_file, "r") as f:
@@ -123,7 +126,7 @@ try:
                     matched = True
                     break
                 else:
-                    print("[WARNING] Unknown face detected")
+                    print("[WARNING] Unknown face or confidence too low")
                     GPIO.output(RED_LED_PIN, GPIO.HIGH)
                     for _ in range(2):
                         GPIO.output(BUZZER_PIN, GPIO.HIGH)
@@ -144,4 +147,4 @@ except KeyboardInterrupt:
     print("\n[INFO] Exiting...")
     servo.stop()
     GPIO.cleanup()
-##hi
+#hi
