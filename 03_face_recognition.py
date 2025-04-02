@@ -6,14 +6,16 @@ from mfrc522 import SimpleMFRC522
 import time
 from PIL import Image
 
-# GPIO Setup
+# GPIO Pins
 BUZZER_PIN = 17
 GREEN_LED_PIN = 26
 RED_LED_PIN = 19
 SERVO_PIN = 21
 
+# GPIO Setup
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
+
 GPIO.setup(BUZZER_PIN, GPIO.OUT)
 GPIO.setup(GREEN_LED_PIN, GPIO.OUT)
 GPIO.setup(RED_LED_PIN, GPIO.OUT)
@@ -23,11 +25,13 @@ GPIO.output(BUZZER_PIN, GPIO.LOW)
 GPIO.output(GREEN_LED_PIN, GPIO.LOW)
 GPIO.output(RED_LED_PIN, GPIO.LOW)
 
-servo = GPIO.PWM(SERVO_PIN, 50)
+# Servo setup
+servo = GPIO.PWM(SERVO_PIN, 50)  # 50 Hz
 servo.start(0)
 
+# RFID and Face recognition setup
 reader = SimpleMFRC522()
-face_detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+face_detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 def move_servo():
@@ -41,92 +45,86 @@ def move_servo():
     time.sleep(0.5)
     servo.ChangeDutyCycle(0)
 
+def get_images_and_labels(path):
+    face_samples, ids = [], []
+    for file in os.listdir(path):
+        if file.endswith('.jpg'):
+            try:
+                img = Image.open(os.path.join(path, file)).convert('L')
+                img_np = np.array(img, 'uint8')
+                faces = face_detector.detectMultiScale(img_np)
+                for (x, y, w, h) in faces:
+                    face_samples.append(img_np[y:y+h, x:x+w])
+                    ids.append(1)
+            except:
+                continue
+    return face_samples, ids
+
 try:
     while True:
         print("\n[INFO] Please scan your RFID card...")
-
-        cam = cv2.VideoCapture(0)
-        cam.set(3, 640)
-        cam.set(4, 480)
-
         try:
             rfid_id, _ = reader.read()
-            rfid_id = str(rfid_id)
+            rfid_id = str(rfid_id).strip()
             print(f"[INFO] RFID Scanned: {rfid_id}")
         except Exception as e:
             print(f"[ERROR] RFID Read Failed: {e}")
-            GPIO.cleanup()
-            break
+            continue
 
         image_folder = os.path.join("dataset", rfid_id)
         if not os.path.exists(image_folder):
-            print(f"[ERROR] No dataset folder found for RFID {rfid_id}")
+            print(f"[ERROR] No dataset folder for RFID {rfid_id}")
             GPIO.output(RED_LED_PIN, GPIO.HIGH)
             time.sleep(2)
             GPIO.output(RED_LED_PIN, GPIO.LOW)
             continue
 
-        def get_images_and_labels(path):
-            face_samples, ids = [], []
-            for file in os.listdir(path):
-                if file.endswith('.jpg'):
-                    try:
-                        img = Image.open(os.path.join(path, file)).convert('L')
-                        img_np = np.array(img, 'uint8')
-                        faces = face_detector.detectMultiScale(img_np)
-                        for (x, y, w, h) in faces:
-                            face_samples.append(img_np[y:y+h, x:x+w])
-                            ids.append(1)
-                    except:
-                        continue
-            return face_samples, ids
-
-        print("[INFO] Training model...")
+        print("[INFO] Training face recognizer...")
         faces, ids = get_images_and_labels(image_folder)
+        if len(faces) == 0:
+            print("[ERROR] No valid face data in folder.")
+            continue
+
         recognizer.train(faces, np.array(ids))
 
+        cam = cv2.VideoCapture(0)
+        cam.set(3, 640)
+        cam.set(4, 480)
         print("[INFO] Look at the camera...")
-        matched = False
 
+        matched = False
         while True:
-            ret, img = cam.read()
+            ret, frame = cam.read()
             if not ret:
                 continue
 
-            img = cv2.flip(img, -1)
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            faces = face_detector.detectMultiScale(gray, 1.3, 5)
+            frame = cv2.flip(frame, -1)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            detected_faces = face_detector.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
 
-            if len(faces) != 1:
-                print("[WARNING] Multiple or no faces detected. Ignoring frame.")
+            if len(detected_faces) != 1:
+                print("[WARNING] No or multiple faces detected, skipping...")
                 continue
 
-            for (x, y, w, h) in faces:
-                face_only = gray[y:y+h, x:x+w]
-                id_pred, conf = recognizer.predict(face_only)
+            for (x, y, w, h) in detected_faces:
+                face_roi = gray[y:y+h, x:x+w]
+                id_pred, conf = recognizer.predict(face_roi)
+                print(f"[INFO] Confidence: {conf:.2f}")
 
-                print(f"[DEBUG] Confidence: {conf:.2f}")
+                if conf < 40:
+                    print(f"[MATCH] Valid Face - Access Granted")
 
-                if conf < 35:  # Lower value means higher confidence
-                    name_file = os.path.join(image_folder, "name.txt")
-                    if os.path.exists(name_file):
-                        with open(name_file, "r") as f:
-                            person_name = f.read().strip()
-                    else:
-                        person_name = "Matched"
-
-                    print(f"[INFO] Face matched - {person_name}")
-                    GPIO.output(BUZZER_PIN, GPIO.HIGH)
                     GPIO.output(GREEN_LED_PIN, GPIO.HIGH)
+                    GPIO.output(BUZZER_PIN, GPIO.HIGH)
                     time.sleep(2)
-                    GPIO.output(BUZZER_PIN, GPIO.LOW)
                     GPIO.output(GREEN_LED_PIN, GPIO.LOW)
+                    GPIO.output(BUZZER_PIN, GPIO.LOW)
 
                     move_servo()
                     matched = True
                     break
                 else:
-                    print("[WARNING] Unknown face or confidence too low")
+                    print("[WARNING] Unknown Face")
                     GPIO.output(RED_LED_PIN, GPIO.HIGH)
                     for _ in range(2):
                         GPIO.output(BUZZER_PIN, GPIO.HIGH)
@@ -135,7 +133,6 @@ try:
                         time.sleep(0.3)
                     GPIO.output(RED_LED_PIN, GPIO.LOW)
 
-            cv2.imshow("Face Recognition", img)
             if matched or cv2.waitKey(1) & 0xFF == 27:
                 break
 
@@ -144,7 +141,6 @@ try:
         time.sleep(3)
 
 except KeyboardInterrupt:
-    print("\n[INFO] Exiting...")
+    print("\n[INFO] Exiting Program.")
     servo.stop()
     GPIO.cleanup()
-#hi
