@@ -81,3 +81,4 @@ with open(labels_path, 'w', newline='') as f:
 
 print(f"\n[INFO] {len(np.unique(ids))} unique faces trained.")
 print(f"[INFO] Labels saved to {labels_path}. Exiting Program.")
+##Hi
